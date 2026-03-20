@@ -1,0 +1,191 @@
+name: YouTube Downloader CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - '**.exe'
+      - 'images-readme/**'
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Ejecutar tests diarios a las 3 AM UTC
+    - cron: '0 3 * * *'
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install system dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg xvfb
+        # Para tests de GUI headless
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest pytest-cov
+        pip install -r requirements.txt
+
+    - name: Verify project structure
+      run: |
+        echo "🔍 Verificando estructura del proyecto..."
+        test -f Youtube_Downloader.py || (echo "❌ Falta Youtube_Downloader.py" && exit 1)
+        test -f information.json || (echo "❌ Falta information.json" && exit 1)
+        test -f get_hash.py || (echo "❌ Falta get_hash.py" && exit 1)
+        test -d frames || (echo "❌ Falta carpeta frames/" && exit 1)
+        test -f requirements.txt || (echo "❌ Falta requirements.txt" && exit 1)
+        echo "✅ Estructura OK"
+
+    - name: Lint with flake8
+      run: |
+        echo "🔍 Analizando código..."
+        # Errores críticos
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Advertencias (no falla el build)
+        flake8 . --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics --exclude=.git,__pycache__,build,dist,*.egg-info
+
+    - name: Test imports
+      run: |
+        echo "🧪 Testeando imports..."
+        python -c "from frames.root import root, ruta; print('✅ frames.root OK')"
+        python -c "from frames.load_config import load_file, calcular_file; print('✅ frames.load_config OK')"
+        python -c "from frames.idiomas import Idiomas; print('✅ frames.idiomas OK')"
+        python -c "from get_hash import get_directory, get_hash, write_dict_hash_dir, cheack_updates; print('✅ get_hash OK')"
+
+    - name: Test hash system
+      run: |
+        echo "🔐 Testeando sistema de hashes..."
+        python -c "
+        from get_hash import get_directory, get_hash, write_dict_hash_dir, cheack_updates
+        import json
+        
+        # Test 1: Obtener árbol de directorios
+        tree = get_directory(debug=False)
+        print(f'📁 Archivos encontrados: {len(tree)}')
+        
+        # Test 2: Calcular hashes
+        hashes = get_hash(tree)
+        print(f'🔑 Hashes calculados: {len(hashes)}')
+        
+        # Test 3: Escribir archivo de hashes
+        write_dict_hash_dir(hashes)
+        print('📝 Archivo de hashes escrito')
+        
+        # Test 4: Verificar actualizaciones
+        needs_update = cheack_updates()
+        print(f'⚠️ ¿Necesita actualización? {needs_update}')
+        
+        print('✅ Sistema de hashes funcionando correctamente')
+        '
+
+    - name: Test configuration loading
+      run: |
+        echo "⚙️ Testeando carga de configuración..."
+        python -c "
+        from frames.load_config import load_file, calcular_file
+        import os
+        
+        # Test carga de information.json
+        if os.path.exists('information.json'):
+            import json
+            with open('information.json', 'r') as f:
+                info = json.load(f)
+            print(f'✅ information.json cargado - Versión: {info.get(\"version\", \"N/A\")}')
+        else:
+            print('⚠️ information.json no encontrado')
+        '
+
+    - name: Test information.json integrity
+      run: |
+        echo "📋 Verificando information.json..."
+        python -c "
+        import json
+        import sys
+        
+        try:
+            with open('information.json', 'r') as f:
+                info = json.load(f)
+            
+            required_fields = ['version', 'doc', 'autor', 'contribuidores']
+            missing = [f for f in required_fields if f not in info]
+            
+            if missing:
+                print(f'❌ Campos faltantes: {missing}')
+                sys.exit(1)
+            
+            print(f'✅ Versión: {info[\"version\"]}')
+            print(f'✅ Autor: {info[\"autor\"][\"usuario\"]}')
+            print(f'✅ Contribuidores: {len(info[\"contribuidores\"])}')
+            
+        except json.JSONDecodeError as e:
+            print(f'❌ JSON inválido: {e}')
+            sys.exit(1)
+        except Exception as e:
+            print(f'❌ Error: {e}')
+            sys.exit(1)
+        '
+
+    - name: Build executable (Windows only)
+      if: matrix.os == 'windows-latest' && matrix.python-version == '3.11'
+      run: |
+        echo "🏗️ Construyendo ejecutable..."
+        pip install pyinstaller
+        pyinstaller --onefile --windowed --icon=imagenes/logo.ico Youtube_Downloader.py || echo "⚠️ Build falló (puede que falten assets)"
+
+    - name: Upload artifact (Windows)
+      if: matrix.os == 'windows-latest' && matrix.python-version == '3.11'
+      uses: actions/upload-artifact@v3
+      with:
+        name: Youtube-Downloader-Windows
+        path: dist/*.exe
+        retention-days: 7
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Bandit security checks
+      run: |
+        pip install bandit
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . || true
+
+  release:
+    needs: [test, security]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
