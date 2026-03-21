@@ -1,12 +1,27 @@
-- name: Ejecutar Python inline
-  shell: python
-  run: |
-    import os
-    import sys
-    
-    print("Hola desde GitHub Actions")
-    print(f"Directorio actual: {os.getcwd()}")
-    
-    # Tu lógica aquí
-    datos = [1, 2, 3, 4, 5]
-    print(f"Sumatoria: {sum(datos)}")
+# .github/workflows/test.yml
+name: Test YouTube Downloader
+
+on: [push, workflow_dispatch]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          
+      - name: Instalar dependencias del sistema (para Tkinter)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-dev
+          
+      - name: Instalar requirements
+        run: pip install -r requirements.txt
+        
+      - name: Ejecutar tests
+        run: pytest tests/ -v
