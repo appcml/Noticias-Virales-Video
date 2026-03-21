@@ -1,5 +1,8 @@
+# Dependencias comunes (funcionan en todas las plataformas)
 pytube
 pyinstaller
 pillow
 requests
-py2exe
+
+# Solo para Windows - py2exe no está disponible en Linux
+py2exe; platform_system == "Windows"
