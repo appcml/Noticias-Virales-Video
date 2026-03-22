@@ -1,11 +1,8 @@
-name: 🤖 Bot Noticias Automático (Buscar+Descargar+Publicar)
+name: 🤖 Bot Automático - Buscar Descargar Publicar
 
 on:
-  # Ejecutar automáticamente cada hora
   schedule:
-    - cron: '0 * * * *'  # Cada hora en punto
-  
-  # Permitir ejecución manual para pruebas
+    - cron: '0 * * * *'  # Cada hora
   workflow_dispatch:
 
 jobs:
