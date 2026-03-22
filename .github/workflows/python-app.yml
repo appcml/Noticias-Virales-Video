@@ -11,7 +11,7 @@ on:
 jobs:
   bot-completo:
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # Límite por si se cuelga
+    timeout-minutes: 20
     
     steps:
       - name: Checkout código
@@ -45,15 +45,3 @@ jobs:
             data/
             ${{ runner.temp }}/bot_noticias/
           retention-days: 7
-      
-      - name: Notificar si falla (opcional)
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 Bot falló - ${new Date().toISOString()}`,
-              body: 'El bot automático de noticias falló. Revisar logs.'
-            })
