@@ -1,8 +1,2 @@
-# Dependencias comunes (funcionan en todas las plataformas)
-pytube
-pyinstaller
-pillow
+yt-dlp
 requests
-
-# Solo para Windows - py2exe no está disponible en Linux
-py2exe; platform_system == "Windows"
