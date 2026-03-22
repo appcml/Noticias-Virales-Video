@@ -1,12 +1,11 @@
 import os
 import json
 from datetime import datetime
-from pytube import YouTube  # o from pytubefix import YouTube
+from pytubefix import YouTube
 
 def get_download_directory():
     """Determina directorio de descarga según el entorno"""
     if os.getenv('GITHUB_ACTIONS') == 'true':
-        # Usar directorio temporal del runner
         temp_dir = os.getenv('RUNNER_TEMP', '/tmp')
         download_dir = os.path.join(temp_dir, 'youtube_downloads')
     else:
@@ -27,17 +26,15 @@ def descargar_video_con_metadatos(url, calidad='highest'):
         download_dir = get_download_directory()
         print(f"📁 Directorio: {download_dir}")
         
-        # Crear objeto YouTube
         yt = YouTube(url)
         
         print(f"🎬 Título: {yt.title}")
         print(f"👤 Canal: {yt.author}")
         print(f"⏱️  Duración: {yt.length} segundos")
         
-        # Extraer metadatos completos
         metadatos = {
             'titulo': yt.title,
-            'descripcion': yt.description,  # Descripción completa del video
+            'descripcion': yt.description,
             'canal': yt.author,
             'url': url,
             'duracion_segundos': yt.length,
@@ -51,13 +48,11 @@ def descargar_video_con_metadatos(url, calidad='highest'):
             'calidad_descarga': calidad
         }
         
-        # Guardar metadatos en archivo JSON
         metadata_file = os.path.join(download_dir, f"{yt.video_id}_metadatos.json")
         with open(metadata_file, 'w', encoding='utf-8') as f:
             json.dump(metadatos, f, ensure_ascii=False, indent=2)
         print(f"💾 Metadatos guardados: {metadata_file}")
         
-        # Guardar descripción en TXT (más legible para noticias)
         descripcion_file = os.path.join(download_dir, f"{yt.video_id}_descripcion.txt")
         with open(descripcion_file, 'w', encoding='utf-8') as f:
             f.write(f"TÍTULO: {yt.title}\n")
@@ -71,7 +66,6 @@ def descargar_video_con_metadatos(url, calidad='highest'):
             f.write(yt.description or "Sin descripción")
         print(f"📝 Descripción guardada: {descripcion_file}")
         
-        # Descargar video
         if calidad == 'highest':
             stream = yt.streams.get_highest_resolution()
         elif calidad == 'audio':
@@ -79,7 +73,6 @@ def descargar_video_con_metadatos(url, calidad='highest'):
         else:
             stream = yt.streams.get_lowest_resolution()
         
-        # Nombre de archivo seguro
         safe_title = "".join([c for c in yt.title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
         video_filename = f"{yt.video_id}_{safe_title[:50]}.mp4"
         video_path = os.path.join(download_dir, video_filename)
@@ -87,7 +80,6 @@ def descargar_video_con_metadatos(url, calidad='highest'):
         print(f"⬇️  Descargando video...")
         stream.download(output_path=download_dir, filename=video_filename)
         
-        # Verificar tamaño
         file_size = os.path.getsize(video_path)
         print(f"✅ Video guardado: {video_path}")
         print(f"📊 Tamaño: {file_size / 1024 / 1024:.2f} MB")
