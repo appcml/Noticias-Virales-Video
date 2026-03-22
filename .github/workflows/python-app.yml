@@ -1,107 +1,59 @@
-name: Descargar Video YouTube - 72h Retención
+name: 🤖 Bot Noticias Automático (Buscar+Descargar+Publicar)
 
 on:
+  # Ejecutar automáticamente cada hora
+  schedule:
+    - cron: '0 * * * *'  # Cada hora en punto
+  
+  # Permitir ejecución manual para pruebas
   workflow_dispatch:
-    inputs:
-      video_url:
-        description: 'URL del video de YouTube (noticias, etc.)'
-        required: true
-        default: 'https://youtube.com/watch?v=dQw4w9WgXcQ'
-      calidad:
-        description: 'Calidad del video'
-        required: true
-        default: 'highest'
-        type: choice
-        options:
-          - highest
-          - lowest
-          - audio
-      categoria:
-        description: 'Categoría/Tag para organizar (ej: noticias, musica, etc.)'
-        required: false
-        default: 'general'
 
 jobs:
-  descargar:
+  bot-completo:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20  # Límite por si se cuelga
     
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
-
-      - name: Setup Python 3.10
+      
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: 'pip'
-
-      - name: Instalar dependencias del sistema
+      
+      - name: Instalar dependencias
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
-
-      - name: Instalar dependencias Python
-        run: |
-          pip install yt-dlp
-
-      - name: Verificar espacio disponible
-        run: df -h
-
-      - name: Ejecutar descarga con metadatos
+          pip install -q pytubefix requests
+      
+      - name: Ejecutar Bot Automático
         env:
-          VIDEO_URL: ${{ github.event.inputs.video_url }}
-          CALIDAD: ${{ github.event.inputs.calidad }}
-          CATEGORIA: ${{ github.event.inputs.categoria }}
-        run: |
-          echo "🚀 Iniciando descarga..."
-          echo "URL: $VIDEO_URL"
-          echo "Calidad: $CALIDAD"
-          echo "Categoría: $CATEGORIA"
-          
-          python Youtube_Downloader.py \
-            --url "$VIDEO_URL" \
-            --calidad "$CALIDAD"
-
-      - name: Verificar archivos descargados
-        run: |
-          echo "=== CONTENIDO DE CARPETA TEMPORAL ==="
-          ls -lh $RUNNER_TEMP/youtube_downloads/ || echo "No se encontraron archivos"
-          echo "======================================"
-          
-          VIDEO_COUNT=$(find $RUNNER_TEMP/youtube_downloads/ -name "*.mp4" -o -name "*.webm" -o -name "*.mkv" | wc -l)
-          META_COUNT=$(find $RUNNER_TEMP/youtube_downloads/ -name "*.json" | wc -l)
-          TXT_COUNT=$(find $RUNNER_TEMP/youtube_downloads/ -name "*.txt" | wc -l)
-          
-          echo "Videos: $VIDEO_COUNT"
-          echo "Metadatos JSON: $META_COUNT"
-          echo "Descripciones TXT: $TXT_COUNT"
-
-      - name: Crear archivo de info del workflow
-        run: |
-          INFO_FILE="$RUNNER_TEMP/youtube_downloads/_INFO_WORKFLOW.txt"
-          echo "WORKFLOW INFO" > $INFO_FILE
-          echo "=============" >> $INFO_FILE
-          echo "Run ID: ${{ github.run_id }}" >> $INFO_FILE
-          echo "Run Number: ${{ github.run_number }}" >> $INFO_FILE
-          echo "Fecha: $(date)" >> $INFO_FILE
-          echo "URL Video: ${{ github.event.inputs.video_url }}" >> $INFO_FILE
-          echo "Categoría: ${{ github.event.inputs.categoria }}" >> $INFO_FILE
-          echo "Retención: 72 horas (3 días)" >> $INFO_FILE
-          echo "Descargar antes de: $(date -d '+3 days' '+%Y-%m-%d %H:%M:%S')" >> $INFO_FILE
-
-      - name: Subir a Artifacts (72 horas = 3 días)
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: python bot_automatico.py
+      
+      - name: Guardar datos y logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video-y-metadatos-${{ github.run_number }}-${{ github.event.inputs.categoria }}
-          path: ${{ runner.temp }}/youtube_downloads/*
-          retention-days: 3
-          if-no-files-found: error
-          compression-level: 6
-
-      - name: Resumen final
-        if: always()
-        run: |
-          echo "✅ Workflow completado"
-          echo "📦 Artifact disponible por 72 horas (3 días)"
-          echo "🔗 Descarga desde: Actions > Este workflow > Artifacts"
+          name: bot-data-hora-${{ github.run_number }}
+          path: |
+            data/
+            ${{ runner.temp }}/bot_noticias/
+          retention-days: 7
+      
+      - name: Notificar si falla (opcional)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Bot falló - ${new Date().toISOString()}`,
+              body: 'El bot automático de noticias falló. Revisar logs.'
+            })
