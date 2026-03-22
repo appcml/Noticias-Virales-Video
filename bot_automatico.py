@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Bot Automático Completo - v5.0
+Bot Automático Completo - v5.1 (yt-dlp edition)
 Flujo: Buscar → Descargar → Publicar (todo automático)
-Ubicación: Noticias-Virales-Video/bot_automatico.py
 """
 
 import os
@@ -104,7 +103,7 @@ def buscar_videos_youtube():
             data = resp.json()
             
             if 'error' in data:
-                log(f"YouTube API Error: {data['error'].get('message', 'Unknown')}", 'error')
+                log(f"API Error: {data['error'].get('message', 'Unknown')}", 'error')
                 continue
             
             for item in data.get('items', []):
@@ -116,7 +115,6 @@ def buscar_videos_youtube():
                 titulo = snip.get('title', '')
                 puntaje = calcular_puntaje(titulo)
                 
-                # Solo noticias relevantes (puntaje >= 6)
                 if puntaje >= 6:
                     videos.append({
                         'video_id': vid,
@@ -133,7 +131,6 @@ def buscar_videos_youtube():
         except Exception as e:
             log(f"Error buscando: {e}", 'error')
     
-    # Ordenar por puntaje y eliminar duplicados
     videos = sorted(videos, key=lambda x: x['puntaje'], reverse=True)
     vistos = set()
     unicos = []
@@ -143,61 +140,87 @@ def buscar_videos_youtube():
             unicos.append(v)
     
     log(f"✅ Encontrados {len(unicos)} videos nuevos relevantes", 'exito')
-    return unicos[:3]  # Top 3
+    return unicos[:3]
 
 # =============================================================================
-# PASO 2: DESCARGAR VIDEO
+# PASO 2: DESCARGAR VIDEO CON YT-DLP
 # =============================================================================
 
 def descargar_video(video_info, output_dir):
-    """Descarga video usando pytubefix"""
+    """Descarga video usando yt-dlp (más robusto contra bloqueos)"""
     try:
-        from pytubefix import YouTube
+        import yt_dlp
         
         log(f"⬇️ Descargando: {video_info['titulo'][:50]}...", 'info')
         
-        yt = YouTube(video_info['url'])
+        video_id = video_info['video_id']
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
         
-        # Metadatos completos
-        metadatos = {
-            'video_id': video_info['video_id'],
-            'titulo': yt.title,
-            'descripcion': yt.description or video_info['descripcion'],
-            'canal': yt.author or video_info['canal'],
-            'url': video_info['url'],
-            'duracion_segundos': yt.length,
-            'duracion_formateada': f"{yt.length // 60}:{yt.length % 60:02d}",
-            'vistas': yt.views,
-            'thumbnail_url': video_info['thumbnail'],
-            'keywords': video_info.get('keywords', []),
-            'puntaje_noticia': video_info['puntaje'],
-            'fecha_descarga': datetime.now().isoformat(),
+        output_template = str(output_path / f"{video_id}_%(title).50s.%(ext)s")
+        
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': output_template,
+            'quiet': True,
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Referer': 'https://www.youtube.com/',
+            },
+            'retries': 3,
+            'fragment_retries': 3,
+            'socket_timeout': 30,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android'],
+                }
+            },
         }
         
-        # Seleccionar calidad
-        stream = yt.streams.get_highest_resolution()
-        
-        # Descargar
-        safe_title = "".join([c for c in yt.title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-        filename = f"{video_info['video_id']}_{safe_title[:40]}.mp4"
-        output_path = Path(output_dir) / filename
-        
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        stream.download(output_path=str(output_path.parent), filename=filename)
-        
-        # Guardar metadatos
-        meta_file = output_path.parent / f"{video_info['video_id']}_metadatos.json"
-        with open(meta_file, 'w', encoding='utf-8') as f:
-            json.dump(metadatos, f, ensure_ascii=False, indent=2)
-        
-        file_size = output_path.stat().st_size
-        log(f"✅ Descargado: {file_size/1024/1024:.1f} MB", 'exito')
-        
-        return {
-            'video_path': str(output_path),
-            'metadatos': metadatos
-        }
-        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_info['url'], download=False)
+            
+            metadatos = {
+                'video_id': video_id,
+                'titulo': info.get('title', video_info['titulo']),
+                'descripcion': info.get('description', video_info['descripcion']),
+                'canal': info.get('uploader', video_info['canal']),
+                'url': video_info['url'],
+                'duracion_segundos': info.get('duration', 0),
+                'duracion_formateada': f"{info.get('duration', 0) // 60}:{info.get('duration', 0) % 60:02d}",
+                'vistas': info.get('view_count', 0),
+                'thumbnail_url': info.get('thumbnail', video_info['thumbnail']),
+                'tags': info.get('tags', []),
+                'puntaje_noticia': video_info['puntaje'],
+                'fecha_descarga': datetime.now().isoformat(),
+            }
+            
+            log(f"   Formato: {info.get('format', 'desconocido')}", 'info')
+            ydl.download([video_info['url']])
+            
+            descargados = list(output_path.glob(f"{video_id}_*"))
+            archivos_video = [f for f in descargados if f.suffix in ['.mp4', '.webm', '.mkv']]
+            
+            if not archivos_video:
+                raise FileNotFoundError("No se encontró archivo de video descargado")
+            
+            video_file = archivos_video[0]
+            file_size = video_file.stat().st_size
+            
+            meta_file = output_path / f"{video_id}_metadatos.json"
+            with open(meta_file, 'w', encoding='utf-8') as f:
+                json.dump(metadatos, f, ensure_ascii=False, indent=2)
+            
+            log(f"✅ Descargado: {file_size/1024/1024:.1f} MB", 'exito')
+            
+            return {
+                'video_path': str(video_file),
+                'metadatos': metadatos
+            }
+            
     except Exception as e:
         log(f"❌ Error descargando: {e}", 'error')
         return None
@@ -212,14 +235,12 @@ def publicar_facebook(video_path, metadatos):
         log("Faltan credenciales Facebook", 'error')
         return None
     
-    # Verificar duplicado
     historial_fb = cargar_json(HISTORIAL_FB, [])
     for pub in historial_fb:
         if pub.get('video_id') == metadatos['video_id']:
             log(f"⚠️ Ya publicado: {metadatos['video_id']}", 'advertencia')
             return None
     
-    # Crear mensaje
     hashtags = "#BreakingNews #Noticias #Urgente #Viral"
     
     mensaje = f"""🔴 {metadatos['titulo']}
@@ -254,7 +275,6 @@ def publicar_facebook(video_path, metadatos):
             resultado = response.json()
             post_id = resultado.get('id')
             
-            # Guardar en historial
             historial_fb.append({
                 'video_id': metadatos['video_id'],
                 'titulo': metadatos['titulo'],
@@ -280,37 +300,32 @@ def ejecutar_flujo_completo():
     """Ejecuta todo el flujo: Buscar → Descargar → Publicar"""
     
     print("\n" + "="*70)
-    print("🤖 BOT AUTOMÁTICO DE NOTICIAS - v5.0")
+    print("🤖 BOT AUTOMÁTICO DE NOTICIAS - v5.1 (yt-dlp)")
     print(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*70)
     
     temp_dir = os.getenv('RUNNER_TEMP', '/tmp') + '/bot_noticias'
     Path(temp_dir).mkdir(parents=True, exist_ok=True)
     
-    # PASO 1: BUSCAR
     videos = buscar_videos_youtube()
     if not videos:
         log("⏹️ No hay videos nuevos para procesar", 'advertencia')
         return False
     
-    # PASO 2 & 3: DESCARGAR Y PUBLICAR
     publicados = 0
     for video in videos:
         log(f"\n{'─'*50}", 'info')
         log(f"Procesando: {video['titulo'][:50]}...", 'info')
         
-        # Descargar
         resultado = descargar_video(video, temp_dir)
         if not resultado:
             log("⏭️ Saltando (falló descarga)", 'advertencia')
             continue
         
-        # Publicar
         post = publicar_facebook(resultado['video_path'], resultado['metadatos'])
         if post:
             publicados += 1
             
-            # Guardar en historial de búsqueda
             historial = cargar_json(HISTORIAL_BUSQUEDA, [])
             historial.append({
                 'video_id': video['video_id'],
@@ -320,9 +335,8 @@ def ejecutar_flujo_completo():
             })
             guardar_json(HISTORIAL_BUSQUEDA, historial)
         
-        time.sleep(5)  # Pausa entre publicaciones
+        time.sleep(5)
     
-    # Resumen
     log(f"\n{'='*70}", 'info')
     log(f"📊 RESUMEN: {publicados}/{len(videos)} videos publicados", 'exito')
     log(f"{'='*70}", 'info')
