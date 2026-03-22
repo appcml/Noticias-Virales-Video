@@ -1,14 +1,14 @@
-name: 🤖 Bot Automático - Buscar Descargar Publicar
+name: 🤖 Bot Automático - Publicar Noticias
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # Cada hora
   workflow_dispatch:
 
 jobs:
   bot-completo:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     
     steps:
       - name: Checkout código
@@ -20,25 +20,19 @@ jobs:
           python-version: "3.10"
       
       - name: Instalar dependencias
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
-          pip install -q yt-dlp requests
+        run: pip install requests
       
-      - name: Ejecutar Bot Automático
+      - name: Ejecutar Bot
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
-          RUNNER_TEMP: ${{ runner.temp }}
         run: python bot_automatico.py
       
-      - name: Guardar datos y logs
+      - name: Guardar datos
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bot-data-hora-${{ github.run_number }}
-          path: |
-            data/
-            ${{ runner.temp }}/bot_noticias/
-          retention-days: 7
+          name: bot-data-${{ github.run_number }}
+          path: data/
+          retention-days: 30
